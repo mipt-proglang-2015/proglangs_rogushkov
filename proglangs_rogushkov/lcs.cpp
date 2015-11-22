@@ -1,10 +1,13 @@
 #include <vector>
 #include <map>
+#include <stdio.h>
+#include <string>
+#include <time.h>
 
 extern "C" {
 #include <Python.h>
 }
-
+FILE *fp;
 namespace lcstring {
 	struct state {
 		int len, link;
@@ -29,8 +32,9 @@ namespace lcstring {
 		int cur = sz++;
 		st[cur].len = st[last].len + 1;
 		int p;
-		for (p = last; p != -1 && !st[p].next.count(c); p = st[p].link)
+		for (p = last; p != -1 && !st[p].next.count(c); p = st[p].link) {
 			st[p].next[c] = cur;
+		}
 		if (p == -1)
 			st[cur].link = 0;
 		else {
@@ -47,6 +51,8 @@ namespace lcstring {
 				st[q].link = st[cur].link = clone;
 			}
 		}
+// for (int i = 0; i < sz; i++) 
+// 			fprintf(fp, "Some text1: %d %d %c\n", st[i].len, st[i].link, c);
 		last = cur;
 	}
 
@@ -54,7 +60,6 @@ namespace lcstring {
 		sa_init();
 		for (int i = 0; i < s.length(); ++i)
 			sa_extend(s[i]);
-
 		int v = 0, l = 0,
 			best = 0, bestpos = 0;
 		for (int i = 0; i < t.length(); ++i) {
@@ -65,11 +70,11 @@ namespace lcstring {
 			if (st[v].next.count(t[i])) {
 				v = st[v].next[t[i]];
 				++l;
+				// fprintf(fp, "Some text1: %d %d %d\n", v, l, i);
 			}
 			if (l > best)
 				best = l, bestpos = i;
 		}
-		
 		return t.substr(bestpos - best + 1, best);
 	}
 }
@@ -99,7 +104,7 @@ namespace lcsWithOutSTL {
 		++sz;
 	}
 
-	bool count(std::vector<std::pair<char, int> > map, char c) {
+	bool count(std::vector<std::pair<char, int> >& map, const char& c) {
 		for (int i = 0; i < map.size(); i++) {
 			if(map[i].first == c) {
 				return true;
@@ -108,21 +113,33 @@ namespace lcsWithOutSTL {
 		return false;
 	}
 
-	int find(std::vector<std::pair<char, int> > map, char c) {
+	int find(std::vector<std::pair<char, int> >& map, const char& c) {
 		for (int i = 0; i < map.size(); i++) {
 			if (map[i].first == c) {
-				return i;
+				return map[i].second;
 			}
 		}
-		return -1;
+		map.push_back(std::make_pair(c, 0));
+		return 0;
+	}
+
+	void push(std::vector<std::pair<char, int> >& map, const char& c, int cur) {
+		for (int i = 0; i < map.size(); i++) {
+			if (map[i].first == c) {
+				map[i].second = cur;
+				return;
+			}
+		}
+		map.push_back(std::make_pair(c, cur));
 	}
 
 	void sa_extend(char c) {
 		int cur = sz++;
 		st[cur].len = st[last].len + 1;
 		int p;
-		for (p = last; p != -1 && !count(st[p].next, c); p = st[p].link)
-			st[p].next.push_back(std::make_pair(c, cur));
+		for (p = last; p != -1 && !count(st[p].next, c); p = st[p].link) {
+			push(st[p].next,c, cur);
+		}
 		if (p == -1)
 			st[cur].link = 0;
 		else {
@@ -135,7 +152,7 @@ namespace lcsWithOutSTL {
 				st[clone].next = st[q].next;
 				st[clone].link = st[q].link;
 				for (; p != -1 && find(st[p].next,c) == q; p = st[p].link)
-					st[p].next.push_back(std::make_pair(c, clone) );
+					push(st[p].next, c, clone);
 				st[q].link = st[cur].link = clone;
 			}
 		}
@@ -146,7 +163,6 @@ namespace lcsWithOutSTL {
 		sa_init();
 		for (int i = 0; i < args.sizeS; ++i)
 			sa_extend(args.S[i]);
-
 		int v = 0, l = 0,
 			best = 0, bestpos = 0;
 		for (int i = 0; i < args.sizeT; ++i) {
@@ -154,16 +170,19 @@ namespace lcsWithOutSTL {
 				v = st[v].link;
 				l = st[v].len;
 			}
-			int temp= find(st[v].next, args.T[i]);
-			if (temp != -1) {
-				v = st[v].next[temp].second;
+			if (count(st[v].next, args.T[i])) {
+				// find(st[v].next, args.T[i]);
+				int kate = find(st[v].next, args.T[i]);
+				v = kate;
 				++l;
-			}
+			} 
+				// fprintf(fp, "Some text1: %d %d %d\n", v, l, i);
 			if (l > best)
 				best = l, bestpos = i;
 		}
+
 		char* sub = new char[best + 1];
-		memset(sub, args.T[bestpos - best + 1], best);
+		memcpy(sub, &args.T[bestpos - best + 1], best);
 		sub[best] = '\0';
 		answer answers;
 		answers.ans = sub;
@@ -175,10 +194,24 @@ namespace lcsWithOutSTL {
 static lcstring::param pyobject_to_cxxSTL(PyObject * py_str)
 {
 	lcstring::param result;
-	PyObject * py_first = PyList_GetItem(py_str, 0);
-	PyObject * py_second = PyList_GetItem(py_str, 1);
-	result.S = PyObject_Length(py_first);
-	result.T = PyObject_Length(py_second);
+	char* str;
+
+	if(PyList_Check(py_str)) {
+        for (size_t i = 0; i < PyList_Size(py_str); ++i) {
+            PyObject *list_item = PyList_GetItem(py_str, i);
+            if (!PyArg_Parse(list_item, "s", &str)) {
+                Py_XDECREF(list_item);
+                Py_XDECREF(py_str);
+                return result;
+            }
+          	if (i == 0)
+          	{
+          		result.S = std::string(str);
+          	} else {
+          		result.T = std::string(str);
+          	}
+        }
+    }
 
 	return result;
 }
@@ -199,6 +232,7 @@ static PyObject* funcSTL(PyObject* mod, PyObject* args)
 	std::string result = lcstring::lcs(arg.S, arg.T);
 
 	PyObject* py_result = cxx_to_pyobjectSTL(result);
+
 	return py_result;
 }
 
@@ -206,14 +240,26 @@ static PyObject* funcSTL(PyObject* mod, PyObject* args)
 static lcsWithOutSTL::param pyobject_to_cxx(PyObject * py_str)
 {
 	lcsWithOutSTL::param result;
-	PyObject * py_first = PyList_GetItem(py_str, 0);
-	PyObject * py_second = PyList_GetItem(py_str, 1);
-	result.sizeS = PyObject_Length(py_first);
-	result.sizeT = PyObject_Length(py_second);
-	result.S = PyBytes_AsString(PyUnicode_AsUTF8String(py_first));
-	result.T = PyBytes_AsString(PyUnicode_AsUTF8String(py_second));
-	//char* s;
-	//PyArg_Parse(py_first, "s", &s)
+	char* str;
+
+	if(PyList_Check(py_str)) {
+        for (size_t i = 0; i < PyList_Size(py_str); ++i) {
+            PyObject *list_item = PyList_GetItem(py_str, i);
+            if (!PyArg_Parse(list_item, "s", &str)) {
+                Py_XDECREF(list_item);
+                Py_XDECREF(py_str);
+                return result;
+            }
+          	if (i == 0) {
+          		result.S = str;
+          		result.sizeS = PyObject_Length(list_item);
+          	} else {
+          		result.T = str;
+          		result.sizeT = PyObject_Length(list_item);
+          	}
+        }
+    }
+
 	return result;
 }
 
@@ -225,14 +271,19 @@ static PyObject * cxx_to_pyobject(const lcsWithOutSTL::answer ans)
 
 static PyObject* func(PyObject* mod, PyObject* args)
 {
+	fp = fopen("test12.txt", "w+");
+	clock_t t1,t2;
+	t1=clock();
 	PyObject* source_py = PyTuple_GetItem(args, 0);
 
 	lcsWithOutSTL::param arg = pyobject_to_cxx(source_py);
 
 	lcsWithOutSTL::answer result = lcsWithOutSTL::lcs(arg);
-
-	PyObject* py_result = cxx_to_pyobject(result);
-	return py_result;
+	PyObject * results = cxx_to_pyobject(result);
+	t2=clock();
+	float diff (((float)t2-(float)t1)/CLOCKS_PER_SEC);
+	fprintf(fp, "%f ms\n", diff*1000);
+	return results;
 }
 
 
